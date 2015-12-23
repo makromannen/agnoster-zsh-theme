@@ -76,6 +76,33 @@ prompt_context() {
   fi
 }
 
+prompt_agnoster_check_git_arrows() {
+	# reset git arrows
+	prompt_agnoster_git_arrows=
+
+	# check if there is an upstream configured for this branch
+	command git rev-parse --abbrev-ref @'{u}' &>/dev/null || return 128
+
+	local arrow_status
+	# check git left and right arrow_status
+	arrow_status="$(command git rev-list --left-right --count HEAD...@'{u}' 2>/dev/null)"
+	# exit if the command failed
+	(( !$? )) || return
+
+	# left and right are tab-separated, split on tab and store as array
+	arrow_status=(${(ps:\t:)arrow_status})
+	local arrows left=${arrow_status[1]} right=${arrow_status[2]}
+
+	(( ${right:-0} > 0 )) && arrows+="${GIT_DOWN_ARROW:-\u2193}${right}"
+	(( ${left:-0} > 0 )) && arrows+="${GIT_UP_ARROW:-\u2191}${left}"
+
+	[[ -n $arrows ]] && prompt_agnoster_git_arrows="${arrows}"
+}
+
+# async_git_fetch() {
+  # GIT_TERMINAL_PROMPT=0 command git -c gc.auto=0 fetch
+# }
+
 # Git: branch/detached head, dirty status
 prompt_git() {
   local color ref
@@ -84,20 +111,42 @@ prompt_git() {
   }
   ref="$vcs_info_msg_0_"
   if [[ -n "$ref" ]]; then
+    # if [[ -n $(git remote show) ]]; then
+    #   (
+    #     async_job asyncw async_git_fetch
+    #   )
+    # fi
+    git_changed_c=$(command git diff --name-status --diff-filter=ABCDMRTX | wc -l | tr -d "[[:space:]]")
+    git_conflict_c=$(command git diff --name-status --diff-filter=U | wc -l | tr -d "[[:space:]]")
+    git_staged_c=$(command git diff --staged --name-status | wc -l | tr -d "[[:space:]]")
+    git_untracked_c=$(command git ls-files --others --exclude-standard $(git rev-parse --show-cdup) | wc -l | tr -d "[[:space:]]")
+    git_stashed_c=$(command git stash list | wc -l | tr -d "[[:space:]]")
+    if (( git_changed_c > 0 )) ; then git_changed="✚${git_changed_c}"; fi
+    if (( git_conflict_c > 0 )) ; then git_conflict="✖${git_conflict_c}"; fi
+    if (( git_staged_c > 0 )) ; then git_staged="●${git_staged_c}"; fi
+    if (( git_untracked_c > 0 )) ; then git_untracked="…${git_untracked_c}"; fi
+    if (( git_stashed_c > 0 )) ; then git_stashed="⚑${git_stashed_c}"; fi
+    prompt_agnoster_check_git_arrows
+    (( $? == 128)) && git_is_local="𝑳"
+
     if is_dirty; then
+      prompt_segment green $PRIMARY_FG
+      print -Pn "$prompt_agnoster_git_arrows$git_staged$git_conflict$git_changed$git_untracked$git_stashed"
       color=yellow
-      ref="${ref} $PLUSMINUS"
+      ref="${ref}"
     else
+      prompt_segment green $PRIMARY_FG
+      print -Pn "$prompt_agnoster_git_arrows$git_staged$git_conflict$git_changed$git_untracked$git_stashed"
       color=green
-      ref="${ref} "
+      ref="${ref}"
     fi
     if [[ "${ref/.../}" == "$ref" ]]; then
-      ref="$BRANCH $ref"
+      ref="$BRANCH$git_is_local $ref"
     else
       ref="$DETACHED ${ref/.../}"
     fi
     prompt_segment $color $PRIMARY_FG
-    print -Pn " $ref"
+    print -Pn " $ref "
   fi
 }
 
